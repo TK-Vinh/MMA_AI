@@ -4,6 +4,9 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const authRouter = require('./src/routes/AuthRoutes');
 const chatRouter = require('./src/routes/ChatRoutes');
+const collectionRouter = require('./src/routes/CollectionRoutes');
+const fragranceRouter = require('./src/routes/FragranceRoutes');
+const userRouter = require('./src/routes/UserRoutes');
 
 const app = express();
 
@@ -14,7 +17,9 @@ app.use(express.json());
 // Routes
 app.use('/api/auth', authRouter);
 app.use('/api/chat', chatRouter);
-
+app.use('/api/collection', collectionRouter);
+app.use('/api/fragrance', fragranceRouter);
+app.use('/api/user', userRouter);
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);
