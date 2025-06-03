@@ -1,10 +1,10 @@
 const express = require('express');
-const authMiddleware = require('../middlewares/auth');
+const { protect, adminOnly } = require('../middlewares/auth');
 const Fragrance = require('../models/Fragrance');
 
 const router = express.Router();
 
-// GET /api/fragrances - Get all fragrances with filters
+// GET /api/fragrances - Get all fragrances with filters (public route)
 router.get('/', async (req, res) => {
   try {
     const {
@@ -69,7 +69,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-// GET /api/fragrances/categories - Get all categories
+// GET /api/fragrances/categories - Get all categories (public route)
 router.get('/categories', async (req, res) => {
   try {
     const categories = await Fragrance.distinct('category', { isActive: true });
@@ -87,7 +87,7 @@ router.get('/categories', async (req, res) => {
   }
 });
 
-// GET /api/fragrances/brands - Get all brands
+// GET /api/fragrances/brands - Get all brands (public route)
 router.get('/brands', async (req, res) => {
   try {
     const brands = await Fragrance.distinct('brand', { isActive: true });
@@ -105,7 +105,7 @@ router.get('/brands', async (req, res) => {
   }
 });
 
-// GET /api/fragrances/:id - Get single fragrance
+// GET /api/fragrances/:id - Get single fragrance (public route)
 router.get('/:id', async (req, res) => {
   try {
     const fragrance = await Fragrance.findById(req.params.id);
@@ -131,8 +131,8 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// POST /api/fragrances - Create new fragrance (admin only - you can add admin middleware later)
-router.post('/', authMiddleware, async (req, res) => {
+// POST /api/fragrances - Create new fragrance (admin only)
+router.post('/', protect, adminOnly, async (req, res) => {
   try {
     const fragrance = await Fragrance.create(req.body);
     
@@ -145,6 +145,67 @@ router.post('/', authMiddleware, async (req, res) => {
   } catch (err) {
     res.status(400).json({
       status: 'fail',
+      message: err.message
+    });
+  }
+});
+
+// PUT /api/fragrances/:id - Update fragrance (admin only)
+router.put('/:id', protect, adminOnly, async (req, res) => {
+  try {
+    const fragrance = await Fragrance.findByIdAndUpdate(
+      req.params.id,
+      req.body,
+      {
+        new: true,
+        runValidators: true
+      }
+    );
+
+    if (!fragrance) {
+      return res.status(404).json({
+        status: 'fail',
+        message: 'Fragrance not found'
+      });
+    }
+
+    res.status(200).json({
+      status: 'success',
+      data: {
+        fragrance
+      }
+    });
+  } catch (err) {
+    res.status(400).json({
+      status: 'fail',
+      message: err.message
+    });
+  }
+});
+
+// DELETE /api/fragrances/:id - Delete fragrance (admin only - soft delete)
+router.delete('/:id', protect, adminOnly, async (req, res) => {
+  try {
+    const fragrance = await Fragrance.findByIdAndUpdate(
+      req.params.id,
+      { isActive: false },
+      { new: true }
+    );
+
+    if (!fragrance) {
+      return res.status(404).json({
+        status: 'fail',
+        message: 'Fragrance not found'
+      });
+    }
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Fragrance deleted successfully'
+    });
+  } catch (err) {
+    res.status(500).json({
+      status: 'error',
       message: err.message
     });
   }

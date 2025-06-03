@@ -10,18 +10,23 @@ export const AuthProvider = ({ children }) => {
   const [token, setToken] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [isLoggingOut, setIsLoggingOut] = useState(false); // New flag to prevent logout loop
 
   // Initialize auth state from storage
   useEffect(() => {
     const loadAuthData = async () => {
       try {
         const storedToken = await AsyncStorage.getItem('authToken');
-        if (storedToken) {
+        const storedUser = await AsyncStorage.getItem('userData');
+        
+        if (storedToken && storedUser) {
           setToken(storedToken);
+          setUser(JSON.parse(storedUser));
           await fetchUserData(storedToken);
         }
       } catch (err) {
         console.error('Failed to load auth data:', err);
+        await clearAuthData();
       } finally {
         setIsLoading(false);
       }
@@ -30,15 +35,42 @@ export const AuthProvider = ({ children }) => {
     loadAuthData();
   }, []);
 
-  const fetchUserData = async (token) => {
+  const clearAuthData = async () => {
     try {
-      const response = await axios.get(`${API_BASE_URL}/api/user`, {
-        headers: { Authorization: `Bearer ${token}` }
+      await AsyncStorage.multiRemove(['authToken', 'userData']);
+      setToken(null);
+      setUser(null);
+    } catch (err) {
+      console.error('Error clearing auth data:', err);
+    }
+  };
+
+  const storeAuthData = async (token, userData) => {
+    try {
+      await AsyncStorage.multiSet([
+        ['authToken', token],
+        ['userData', JSON.stringify(userData)]
+      ]);
+    } catch (err) {
+      console.error('Error storing auth data:', err);
+    }
+  };
+
+  const fetchUserData = async (authToken) => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/api/auth/me`, {
+        headers: { Authorization: `Bearer ${authToken}` }
       });
-      setUser(response.data.user);
+      
+      const userData = response.data.data.user;
+      setUser(userData);
+      await storeAuthData(authToken, userData);
+      
+      return userData;
     } catch (err) {
       console.error('Failed to fetch user data:', err);
-      await logout();
+      if (!isLoggingOut) await logout(); // Only logout if not already in progress
+      throw err;
     }
   };
 
@@ -51,14 +83,18 @@ export const AuthProvider = ({ children }) => {
         password
       });
 
-      const { token } = response.data;
-      await AsyncStorage.setItem('authToken', token);
+      const { token, data } = response.data;
+      const userData = data.user;
+      
       setToken(token);
-      await fetchUserData(token);
-      return { success: true };
+      setUser(userData);
+      await storeAuthData(token, userData);
+      
+      return { success: true, user: userData };
     } catch (err) {
-      setError(err.response?.data?.message || 'Login failed');
-      return { success: false, error: err.response?.data?.message };
+      const errorMessage = err.response?.data?.message || 'Login failed';
+      setError(errorMessage);
+      return { success: false, error: errorMessage };
     } finally {
       setIsLoading(false);
     }
@@ -73,20 +109,26 @@ export const AuthProvider = ({ children }) => {
         password
       });
 
-      const { token } = response.data;
-      await AsyncStorage.setItem('authToken', token);
+      const { token, data } = response.data;
+      const userData = data.user;
+      
       setToken(token);
-      await fetchUserData(token);
-      return { success: true };
+      setUser(userData);
+      await storeAuthData(token, userData);
+      
+      return { success: true, user: userData };
     } catch (err) {
-      setError(err.response?.data?.message || 'Registration failed');
-      return { success: false, error: err.response?.data?.message };
+      const errorMessage = err.response?.data?.message || 'Registration failed';
+      setError(errorMessage);
+      return { success: false, error: errorMessage };
     } finally {
       setIsLoading(false);
     }
   };
 
   const logout = async () => {
+    if (isLoggingOut) return; // Prevent multiple logout calls
+    setIsLoggingOut(true);
     setIsLoading(true);
     try {
       if (token) {
@@ -94,14 +136,81 @@ export const AuthProvider = ({ children }) => {
           headers: { Authorization: `Bearer ${token}` }
         });
       }
-      await AsyncStorage.removeItem('authToken');
-      setToken(null);
-      setUser(null);
     } catch (err) {
       console.error('Logout error:', err);
     } finally {
+      await clearAuthData();
+      setIsLoading(false);
+      setIsLoggingOut(false);
+    }
+  };
+
+  const updateProfile = async (userData) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await axios.patch(`${API_BASE_URL}/api/auth/me`, userData, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      const updatedUser = response.data.data.user;
+      setUser(updatedUser);
+      await storeAuthData(token, updatedUser);
+      
+      return { success: true, user: updatedUser };
+    } catch (err) {
+      const errorMessage = err.response?.data?.message || 'Update failed';
+      setError(errorMessage);
+      return { success: false, error: errorMessage };
+    } finally {
       setIsLoading(false);
     }
+  };
+
+  const changePassword = async (currentPassword, newPassword) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await axios.patch(`${API_BASE_URL}/api/auth/change-password`, {
+        currentPassword,
+        newPassword
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      const { token: newToken } = response.data;
+      setToken(newToken);
+      await storeAuthData(newToken, user);
+      
+      return { success: true };
+    } catch (err) {
+      const errorMessage = err.response?.data?.message || 'Password change failed';
+      setError(errorMessage);
+      return { success: false, error: errorMessage };
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Helper functions for role checking
+  const isAdmin = () => {
+    return user?.role === 'admin';
+  };
+
+  const hasRole = (requiredRole) => {
+    if (!user) return false;
+    if (requiredRole === 'admin') {
+      return user.role === 'admin';
+    }
+    return true; // Users can access user-level resources
+  };
+
+  const canManageUsers = () => {
+    return isAdmin();
+  };
+
+  const canManageFragrances = () => {
+    return isAdmin();
   };
 
   // Setup axios interceptors for token handling
@@ -121,12 +230,9 @@ export const AuthProvider = ({ children }) => {
       async (error) => {
         const originalRequest = error.config;
         
-        if (error.response?.status === 401 && !originalRequest._retry) {
+        if (error.response?.status === 401 && !originalRequest._retry && !isLoggingOut) {
           originalRequest._retry = true;
-          
-          // Token refresh logic can be implemented here later
-          // For now, we just logout the user
-          await logout();
+          await logout(); // Only logout if not already in progress
         }
         
         return Promise.reject(error);
@@ -137,7 +243,7 @@ export const AuthProvider = ({ children }) => {
       axios.interceptors.request.eject(requestInterceptor);
       axios.interceptors.response.eject(responseInterceptor);
     };
-  }, [token]);
+  }, [token, isLoggingOut]); // Add isLoggingOut to dependencies
 
   return (
     <AuthContext.Provider
@@ -149,7 +255,13 @@ export const AuthProvider = ({ children }) => {
         login,
         register,
         logout,
+        updateProfile,
+        changePassword,
         isAuthenticated: !!token,
+        isAdmin,
+        hasRole,
+        canManageUsers,
+        canManageFragrances,
       }}
     >
       {children}
