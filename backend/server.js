@@ -23,7 +23,7 @@ app.use((req, res, next) => {
 app.use('/api/auth', authRouter);
 app.use('/api/chat', chatRouter);
 app.use('/api/collection', collectionRouter);
-app.use('/api/fragrance', fragranceRouter);
+app.use('/api/fragrances', fragranceRouter);
 app.use('/api/user', userRouter);
 
 // Error handling middleware

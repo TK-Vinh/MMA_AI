@@ -6,28 +6,51 @@ import AuthNavigator from './AuthNavigator';
 import HomeScreen from '../screens/HomeScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import AdminPanelScreen from '../screens/AdminPanelScreen';
+import FragranceManagementScreen from '../screens/FragranceManagementScreen';
+import ExploreScreen from '../screens/ExploreScreen';
+import FilterScreen from '../screens/FilterScreen';
+import FragranceDetailScreen from '../screens/FragranceDetailScreen';
+import AddToCollectionScreen from '../screens/AddToCollectionScreen';
 import { Ionicons } from '@expo/vector-icons';
 import { View, Text } from 'react-native';
-
-// Placeholder for unimplemented screens
-const PlaceholderScreen = () => (
-  <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-    <Text style={{ fontSize: 18, color: '#666' }}>Screen coming soon!</Text>
-  </View>
-);
+import CreateEditFragranceScreen from '../screens/CreateEditFragranceScreen';
 
 // Admin Stack for nested navigation
 const AdminStack = createStackNavigator();
 const AdminStackNavigator = () => (
   <AdminStack.Navigator screenOptions={{ headerShown: false }}>
     <AdminStack.Screen name="AdminPanel" component={AdminPanelScreen} />
-    <AdminStack.Screen name="UserManagement" component={PlaceholderScreen} />
-    <AdminStack.Screen name="FragranceManagement" component={PlaceholderScreen} />
-    <AdminStack.Screen name="Analytics" component={PlaceholderScreen} />
-    <AdminStack.Screen name="Moderation" component={PlaceholderScreen} />
-    <AdminStack.Screen name="AppSettings" component={PlaceholderScreen} />
-    <AdminStack.Screen name="Reports" component={PlaceholderScreen} />
+    <AdminStack.Screen name="FragranceManagement" component={FragranceManagementScreen} />
+    <AdminStack.Screen 
+      name="CreateFragrance" 
+      component={CreateEditFragranceScreen} 
+      initialParams={{ fragrance: null }} 
+    />
+    <AdminStack.Screen 
+      name="EditFragrance" 
+      component={CreateEditFragranceScreen} 
+    />
+    {/* Add other admin screens here when implemented */}
   </AdminStack.Navigator>
+);
+
+// Explore Stack for nested navigation
+const ExploreStack = createStackNavigator();
+const ExploreStackNavigator = () => (
+  <ExploreStack.Navigator screenOptions={{ headerShown: false }}>
+    <ExploreStack.Screen name="ExploreMain" component={ExploreScreen} />
+    <ExploreStack.Screen name="Filter" component={FilterScreen} />
+    <ExploreStack.Screen name="FragranceDetail" component={FragranceDetailScreen} />
+  </ExploreStack.Navigator>
+);
+
+// Collection Stack for nested navigation
+const CollectionStack = createStackNavigator();
+const CollectionStackNavigator = () => (
+  <CollectionStack.Navigator screenOptions={{ headerShown: false }}>
+    {/* Add collection screens here when implemented */}
+    <CollectionStack.Screen name="AddToCollection" component={AddToCollectionScreen} />
+  </CollectionStack.Navigator>
 );
 
 const Tab = createBottomTabNavigator();
@@ -42,9 +65,9 @@ const MainAppNavigator = () => {
 
           if (route.name === 'Home') {
             iconName = focused ? 'home' : 'home-outline';
-          } else if (route.name === 'Search') {
+          } else if (route.name === 'Explore') {
             iconName = focused ? 'search' : 'search-outline';
-          } else if (route.name === 'Closet') {
+          } else if (route.name === 'Collection') {
             iconName = focused ? 'shirt' : 'shirt-outline';
           } else if (route.name === 'Chat') {
             iconName = focused ? 'chatbubbles' : 'chatbubbles-outline';
@@ -62,9 +85,8 @@ const MainAppNavigator = () => {
       })}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="Search" component={PlaceholderScreen} />
-      <Tab.Screen name="Closet" component={PlaceholderScreen} />
-      <Tab.Screen name="Chat" component={PlaceholderScreen} />
+      <Tab.Screen name="Explore" component={ExploreStackNavigator} />
+      <Tab.Screen name="Collection" component={CollectionStackNavigator} />
       <Tab.Screen name="Profile" component={ProfileScreen} />
       
       {isAdmin() && (

@@ -1,20 +1,47 @@
 const express = require('express');
-const { protect, adminOnly } = require('../middlewares/auth');
-const fragranceController = require('../controllers/FragranceController');
 
 const router = express.Router();
 
-// Public routes (no authentication required)
-router.get('/categories', fragranceController.getCategories);
-router.get('/brands', fragranceController.getBrands);
+const { protect, adminOnly } = require('../middlewares/auth');
 
-router.route('/')
+const fragranceController = require('../controllers/FragranceController');
+
+const fragranceImageController = require('../controllers/FragranceImageController');
+
+
+
+router.route('')
+
   .get(fragranceController.getAllFragrances)
+
   .post(protect, adminOnly, fragranceController.createFragrance);
 
+
+
 router.route('/:id')
-  .get(fragranceController.getFragrance)
+
+  .get(fragranceController.getFragranceById)
+
   .put(protect, adminOnly, fragranceController.updateFragrance)
+
   .delete(protect, adminOnly, fragranceController.deleteFragrance);
+
+
+
+router.route('/:id/images')
+
+  .post(protect, adminOnly, fragranceImageController.uploadImage);
+
+
+
+router.route('/:id/images/:imageId')
+
+  .delete(protect, adminOnly, fragranceImageController.deleteImage);
+
+
+
+router.put('/:id/rating', fragranceController.updateRating);
+
+
 
 module.exports = router;

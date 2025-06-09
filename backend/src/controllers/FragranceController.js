@@ -1,208 +1,305 @@
 const Fragrance = require('../models/Fragrance');
 
-// Get all fragrances with filters
-exports.getAllFragrances = async (req, res) => {
-  try {
-    const {
-      page = 1,
-      limit = 20,
-      category,
-      brand,
-      gender,
-      minPrice,
-      maxPrice,
-      search,
-      sortBy = 'name',
-      sortOrder = 'asc'
-    } = req.query;
+const mongoose = require('mongoose');
 
-    // Build filter object
-    const filter = { isActive: true };
-    
-    if (category) filter.category = category;
-    if (brand) filter.brand = new RegExp(brand, 'i');
-    if (gender && gender !== 'All') filter.gender = gender;
-    
-    if (search) {
-      filter.$text = { $search: search };
-    }
 
-    // Price filter (assuming we want to filter by the minimum size price)
-    if (minPrice || maxPrice) {
-      filter['size.price'] = {};
-      if (minPrice) filter['size.price'].$gte = Number(minPrice);
-      if (maxPrice) filter['size.price'].$lte = Number(maxPrice);
-    }
 
-    // Sort options
-    const sortOptions = {};
-    sortOptions[sortBy] = sortOrder === 'desc' ? -1 : 1;
+// Create a new fragrance
 
-    const skip = (page - 1) * limit;
-
-    const fragrances = await Fragrance.find(filter)
-      .sort(sortOptions)
-      .skip(skip)
-      .limit(Number(limit))
-      .select('-__v');
-
-    const total = await Fragrance.countDocuments(filter);
-
-    res.status(200).json({
-      status: 'success',
-      results: fragrances.length,
-      totalPages: Math.ceil(total / limit),
-      currentPage: Number(page),
-      data: {
-        fragrances
-      }
-    });
-  } catch (err) {
-    res.status(500).json({
-      status: 'error',
-      message: err.message
-    });
-  }
-};
-
-// Get all categories
-exports.getCategories = async (req, res) => {
-  try {
-    const categories = await Fragrance.distinct('category', { isActive: true });
-    res.status(200).json({
-      status: 'success',
-      data: {
-        categories
-      }
-    });
-  } catch (err) {
-    res.status(500).json({
-      status: 'error',
-      message: err.message
-    });
-  }
-};
-
-// Get all brands
-exports.getBrands = async (req, res) => {
-  try {
-    const brands = await Fragrance.distinct('brand', { isActive: true });
-    res.status(200).json({
-      status: 'success',
-      data: {
-        brands: brands.sort()
-      }
-    });
-  } catch (err) {
-    res.status(500).json({
-      status: 'error',
-      message: err.message
-    });
-  }
-};
-
-// Get single fragrance
-exports.getFragrance = async (req, res) => {
-  try {
-    const fragrance = await Fragrance.findById(req.params.id);
-    
-    if (!fragrance || !fragrance.isActive) {
-      return res.status(404).json({
-        status: 'fail',
-        message: 'Fragrance not found'
-      });
-    }
-
-    res.status(200).json({
-      status: 'success',
-      data: {
-        fragrance
-      }
-    });
-  } catch (err) {
-    res.status(500).json({
-      status: 'error',
-      message: err.message
-    });
-  }
-};
-
-// Create new fragrance
 exports.createFragrance = async (req, res) => {
+
   try {
-    const fragrance = await Fragrance.create(req.body);
-    
-    res.status(201).json({
-      status: 'success',
-      data: {
-        fragrance
-      }
-    });
-  } catch (err) {
-    res.status(400).json({
-      status: 'fail',
-      message: err.message
-    });
+
+    const fragrance = new Fragrance(req.body);
+
+    const savedFragrance = await fragrance.save();
+
+    res.status(201).json(savedFragrance);
+
+  } catch (error) {
+
+    console.error('Error in createFragrance:', error);
+
+    res.status(400).json({ message: error.message });
+
   }
+
 };
 
-// Update fragrance
+
+
+// Get all fragrances with optional filtering
+
+exports.getAllFragrances = async (req, res) => {
+
+  try {
+
+    console.log('Received GET /api/fragrances request with query:', req.query);
+
+    const { category, brand, gender, concentration, minRating, search } = req.query;
+
+    const query = {};
+
+
+
+    // Optional filters - only add to query if present
+
+    if (category) {
+
+      if (!['Fresh', 'Floral', 'Oriental', 'Woody', 'Citrus', 'Gourmand', 'Aquatic', 'Spicy', 'Green', 'Fruity'].includes(category)) {
+
+        return res.status(400).json({ message: `Invalid category: ${category}` });
+
+      }
+
+      query.category = category;
+
+    }
+
+    if (brand) query.brand = brand;
+
+    if (gender) {
+
+      if (!['Men', 'Women', 'Unisex'].includes(gender)) {
+
+        return res.status(400).json({ message: `Invalid gender: ${gender}` });
+
+      }
+
+      query.gender = gender;
+
+    }
+
+    if (concentration) {
+
+      if (!['EDT', 'EDP', 'Parfum', 'EDC', 'Cologne'].includes(concentration)) {
+
+        return res.status(400).json({ message: `Invalid concentration: ${concentration}` });
+
+      }
+
+      query.concentration = concentration;
+
+    }
+
+    if (minRating) {
+
+      const minRatingNum = parseFloat(minRating);
+
+      if (isNaN(minRatingNum) || minRatingNum < 0 || minRatingNum > 5) {
+
+        return res.status(400).json({ message: `Invalid minRating: ${minRating}, must be between 0 and 5` });
+
+      }
+
+      query.rating = { $gte: minRatingNum };
+
+    }
+
+    if (search) {
+
+      if (typeof search !== 'string') {
+
+        return res.status(400).json({ message: 'Search parameter must be a string' });
+
+      }
+
+      query.$text = { $search: search };
+
+    }
+
+
+
+    console.log('Executing query:', query);
+
+    const fragrances = await Fragrance.find(query)
+
+      .sort({ createdAt: -1 })
+
+      .limit(20);
+
+    console.log('Found fragrances:', fragrances.length);
+
+    res.json(fragrances);
+
+  } catch (error) {
+
+    console.error('Error in getAllFragrances:', error.message);
+
+    console.error('Stack trace:', error.stack);
+
+    res.status(500).json({ message: 'Internal server error', error: error.message });
+
+  }
+
+};
+
+
+
+// Get a single fragrance by ID
+
+exports.getFragranceById = async (req, res) => {
+
+  try {
+
+    const fragrance = await Fragrance.findById(req.params.id);
+
+    if (!fragrance) {
+
+      return res.status(404).json({ message: 'Fragrance not found' });
+
+    }
+
+    res.json(fragrance);
+
+  } catch (error) {
+
+    if (error instanceof mongoose.CastError) {
+
+      return res.status(400).json({ message: 'Invalid fragrance ID' });
+
+    }
+
+    console.error('Error in getFragranceById:', error);
+
+    res.status(500).json({ message: 'Internal server error', error: error.message });
+
+  }
+
+};
+
+
+
+// Update a fragrance
+
 exports.updateFragrance = async (req, res) => {
+
   try {
+
     const fragrance = await Fragrance.findByIdAndUpdate(
+
       req.params.id,
-      req.body,
-      {
-        new: true,
-        runValidators: true
-      }
+
+      { $set: req.body },
+
+      { new: true, runValidators: true }
+
     );
 
     if (!fragrance) {
-      return res.status(404).json({
-        status: 'fail',
-        message: 'Fragrance not found'
-      });
+
+      return res.status(404).json({ message: 'Fragrance not found' });
+
     }
 
-    res.status(200).json({
-      status: 'success',
-      data: {
-        fragrance
-      }
-    });
-  } catch (err) {
-    res.status(400).json({
-      status: 'fail',
-      message: err.message
-    });
+    res.json(fragrance);
+
+  } catch (error) {
+
+    if (error instanceof mongoose.CastError) {
+
+      return res.status(400).json({ message: 'Invalid fragrance ID' });
+
+    }
+
+    console.error('Error in updateFragrance:', error);
+
+    res.status(400).json({ message: error.message });
+
   }
+
 };
 
-// Delete fragrance (soft delete)
+
+
+// Delete a fragrance
+
 exports.deleteFragrance = async (req, res) => {
+
   try {
-    const fragrance = await Fragrance.findByIdAndUpdate(
-      req.params.id,
-      { isActive: false },
-      { new: true }
-    );
+
+    const fragrance = await Fragrance.findByIdAndDelete(req.params.id);
 
     if (!fragrance) {
-      return res.status(404).json({
-        status: 'fail',
-        message: 'Fragrance not found'
-      });
+
+      return res.status(404).json({ message: 'Fragrance not found' });
+
     }
 
-    res.status(200).json({
-      status: 'success',
-      message: 'Fragrance deleted successfully'
-    });
-  } catch (err) {
-    res.status(500).json({
-      status: 'error',
-      message: err.message
-    });
+    res.json({ message: 'Fragrance deleted successfully' });
+
+  } catch (error) {
+
+    if (error instanceof mongoose.CastError) {
+
+      return res.status(400).json({ message: 'Invalid fragrance ID' });
+
+    }
+
+    console.error('Error in deleteFragrance:', error);
+
+    res.status(500).json({ message: 'Internal server error', error: error.message });
+
   }
+
+};
+
+
+
+// Update fragrance rating
+
+exports.updateRating = async (req, res) => {
+
+  try {
+
+    const { rating } = req.body;
+
+    if (rating < 0 || rating > 5) {
+
+      return res.status(400).json({ message: 'Rating must be between 0 and 5' });
+
+    }
+
+
+
+    const fragrance = await Fragrance.findById(req.params.id);
+
+    if (!fragrance) {
+
+      return res.status(404).json({ message: 'Fragrance not found' });
+
+    }
+
+
+
+    const newTotalRatings = fragrance.totalRatings + 1;
+
+    const newRating = ((fragrance.rating * fragrance.totalRatings) + rating) / newTotalRatings;
+
+
+
+    fragrance.rating = Math.round(newRating * 10) / 10;
+
+    fragrance.totalRatings = newTotalRatings;
+
+
+
+    await fragrance.save();
+
+    res.json(fragrance);
+
+  } catch (error) {
+
+    if (error instanceof mongoose.CastError) {
+
+      return res.status(400).json({ message: 'Invalid fragrance ID' });
+
+    }
+
+    console.error('Error in updateRating:', error);
+
+    res.status(400).json({ message: error.message });
+
+  }
+
 };

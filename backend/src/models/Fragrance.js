@@ -6,6 +6,11 @@ const fragranceSchema = new mongoose.Schema({
     required: [true, 'Fragrance name is required'],
     trim: true
   },
+  images: [{
+    url: String,
+    key: String, // S3 object key
+    altText: String
+  }],
   brand: {
     type: String,
     required: [true, 'Brand is required'],
@@ -69,7 +74,27 @@ const fragranceSchema = new mongoose.Schema({
 }, {
   timestamps: true
 });
-
+fragranceSchema.pre('remove', async function(next) {
+  try {
+    const s3 = new mongoose.mongo.s3({
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+      region: process.env.AWS_REGION
+    });
+    
+    const deletePromises = this.images.map(image => {
+      return s3.deleteObject({
+        Bucket: process.env.AWS_S3_BUCKET_NAME,
+        Key: image.key
+      }).promise();
+    });
+    
+    await Promise.all(deletePromises);
+    next();
+  } catch (err) {
+    next(err);
+  }
+});
 // Index for better search performance
 fragranceSchema.index({ name: 'text', brand: 'text', description: 'text' });
 fragranceSchema.index({ category: 1 });
