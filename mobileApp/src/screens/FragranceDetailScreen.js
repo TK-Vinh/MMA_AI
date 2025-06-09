@@ -1,341 +1,316 @@
-"use client"
-
-import { useEffect, useState, useContext, useRef } from "react"
-import { View, Text, StyleSheet, ScrollView, Image, TouchableOpacity, Animated, Dimensions, Share } from "react-native"
-import { Ionicons } from "@expo/vector-icons"
-import { FragranceContext } from "../context/FragranceContext"
-import { CollectionContext } from "../context/CollectionContext"
-import { AuthContext } from "../context/AuthContext"
-import RatingStars from "../components/RatingStars"
-import NotesSection from "../components/NotesSection"
-import ImageGallery from "../components/ImageGallery"
-import CollectionButton from "../components/CollectionButton"
-import LoadingIndicator from "../components/LoadingIndicator"
-
-const { width } = Dimensions.get("window")
+import React, { useContext, useEffect, useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Image,
+  ScrollView,
+  TouchableOpacity,
+  Alert,
+  TextInput,
+  ActivityIndicator,
+} from 'react-native';
+import { AuthContext } from '../context/AuthContext';
+import Icon from 'react-native-vector-icons/Ionicons';
+import { addToCloset, rateFragrance, getFragranceById } from '../api/fragrances';
 
 const FragranceDetailScreen = ({ route, navigation }) => {
-  const { id } = route.params
-  const { state, getFragranceById, updateRating } = useContext(FragranceContext)
-  const { state: collectionState, addToCollection } = useContext(CollectionContext)
-  const { state: authState } = useContext(AuthContext)
-  const [loading, setLoading] = useState(true)
-  const [userRating, setUserRating] = useState(0)
-  const [showRatingModal, setShowRatingModal] = useState(false)
-  const scrollY = useRef(new Animated.Value(0)).current
-
-  // Animation values
-  const headerOpacity = scrollY.interpolate({
-    inputRange: [0, 100],
-    outputRange: [0, 1],
-    extrapolate: "clamp",
-  })
-
-  const imageScale = scrollY.interpolate({
-    inputRange: [-100, 0, 100],
-    outputRange: [1.2, 1, 0.8],
-    extrapolate: "clamp",
-  })
+  const { fragranceId } = route.params;
+  const { userToken } = useContext(AuthContext);
+  const [fragrance, setFragrance] = useState(null);
+  const [rating, setRating] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    const loadFragrance = async () => {
-      setLoading(true)
-      await getFragranceById(id)
-      setLoading(false)
+    const fetchFragrance = async () => {
+      try {
+        setLoading(true);
+        const data = await getFragranceById(fragranceId, userToken);
+        setFragrance(data);
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchFragrance();
+  }, [fragranceId, userToken]);
+
+  const handleAddToCloset = async () => {
+    if (!userToken) {
+      Alert.alert(
+        'Login Required',
+        'You need to login to add fragrances to your closet',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Login', onPress: () => navigation.navigate('Login') },
+        ]
+      );
+      return;
     }
-
-    loadFragrance()
-  }, [getFragranceById, id])
-
-  useEffect(() => {
-    // Set up navigation header
-    navigation.setOptions({
-      headerTransparent: true,
-      headerBackground: () => <Animated.View style={[styles.headerBackground, { opacity: headerOpacity }]} />,
-      headerRight: () => (
-        <TouchableOpacity style={styles.shareButton} onPress={handleShare}>
-          <Ionicons name="share-outline" size={24} color="#6A0DAD" />
-        </TouchableOpacity>
-      ),
-    })
-  }, [navigation, headerOpacity])
-
-  const handleShare = async () => {
-    if (!state.currentFragrance) return
 
     try {
-      await Share.share({
-        message: `Check out ${state.currentFragrance.name} by ${state.currentFragrance.brand} on Fragrance App!`,
-        url: `https://fragranceapp.com/fragrances/${state.currentFragrance._id}`,
-      })
+      await addToCloset(fragranceId, userToken);
+      Alert.alert('Success', 'Fragrance added to your closet');
     } catch (error) {
-      console.error("Error sharing:", error)
+      Alert.alert('Error', error.message);
     }
-  }
+  };
 
-  const handleRating = async (rating) => {
-    setUserRating(rating)
-    if (authState.userToken) {
-      await updateRating(id, rating)
-    } else {
-      navigation.navigate("Login", { returnTo: "FragranceDetail", params: { id } })
-    }
-  }
-
-  const handleAddToCollection = (status) => {
-    if (!authState.userToken) {
-      navigation.navigate("Login", { returnTo: "FragranceDetail", params: { id } })
-      return
+  const handleRateFragrance = async () => {
+    if (!userToken) {
+      Alert.alert(
+        'Login Required',
+        'You need to login to rate fragrances',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Login', onPress: () => navigation.navigate('Login') },
+        ]
+      );
+      return;
     }
 
-    navigation.navigate("AddToCollection", {
-      fragranceId: id,
-      fragrance: state.currentFragrance,
-      initialStatus: status,
-    })
+    const ratingNum = parseFloat(rating);
+    if (isNaN(ratingNum) || ratingNum < 0 || ratingNum > 5) {
+      Alert.alert('Error', 'Please enter a rating between 0 and 5');
+      return;
+    }
+
+    try {
+      const updatedFragrance = await rateFragrance(fragranceId, ratingNum, userToken);
+      setFragrance(updatedFragrance);
+      Alert.alert('Success', 'Rating submitted successfully');
+      setRating('');
+    } catch (error) {
+      Alert.alert('Error', error.message);
+    }
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator size="large" color="#6366f1" />
+        <Text style={styles.loadingText}>Loading fragrance...</Text>
+      </View>
+    );
   }
 
-  if (loading || !state.currentFragrance) {
-    return <LoadingIndicator />
+  if (error) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.errorText}>😔 Oops! Something went wrong</Text>
+        <Text style={styles.errorSubtext}>{error}</Text>
+        <TouchableOpacity
+          style={styles.retryButton}
+          onPress={() => {
+            setError(null);
+            setLoading(true);
+          }}
+        >
+          <Text style={styles.retryButtonText}>Try Again</Text>
+        </TouchableOpacity>
+      </View>
+    );
   }
 
-  const {
-    name,
-    brand,
-    imageUrl,
-    images,
-    description,
-    notes,
-    concentration,
-    gender,
-    releaseYear,
-    rating,
-    totalRatings,
-    category,
-    size,
-  } = state.currentFragrance
+  if (!fragrance) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.errorText}>Fragrance not found</Text>
+      </View>
+    );
+  }
 
   return (
-    <View style={styles.container}>
-      <Animated.ScrollView
-        scrollEventThrottle={16}
-        onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: false })}
-      >
-        <Animated.View style={[styles.imageContainer, { transform: [{ scale: imageScale }] }]}>
-          {images && images.length > 0 ? (
-            <ImageGallery images={images} />
-          ) : (
-            <Image
-              source={{ uri: imageUrl || "https://via.placeholder.com/400" }}
-              style={styles.image}
-              resizeMode="cover"
-            />
-          )}
-        </Animated.View>
-
-        <View style={styles.contentContainer}>
-          <View style={styles.header}>
-            <View>
-              <Text style={styles.brand}>{brand}</Text>
-              <Text style={styles.name}>{name}</Text>
-            </View>
-
-            <View style={styles.ratingContainer}>
-              <RatingStars rating={rating} size={20} onPress={() => setShowRatingModal(true)} />
-              <Text style={styles.ratingText}>
-                {rating.toFixed(1)} ({totalRatings} {totalRatings === 1 ? "review" : "reviews"})
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.detailsRow}>
-            {concentration && (
-              <View style={styles.detailItem}>
-                <Text style={styles.detailLabel}>Concentration</Text>
-                <Text style={styles.detailValue}>{concentration}</Text>
-              </View>
-            )}
-
-            {gender && (
-              <View style={styles.detailItem}>
-                <Text style={styles.detailLabel}>Gender</Text>
-                <Text style={styles.detailValue}>{gender}</Text>
-              </View>
-            )}
-
-            {category && (
-              <View style={styles.detailItem}>
-                <Text style={styles.detailLabel}>Category</Text>
-                <Text style={styles.detailValue}>{category}</Text>
-              </View>
-            )}
-
-            {releaseYear && (
-              <View style={styles.detailItem}>
-                <Text style={styles.detailLabel}>Released</Text>
-                <Text style={styles.detailValue}>{releaseYear}</Text>
-              </View>
-            )}
-          </View>
-
-          {size && size.length > 0 && (
-            <View style={styles.sizeContainer}>
-              <Text style={styles.sectionTitle}>Available Sizes</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                {size.map((item, index) => (
-                  <View key={index} style={styles.sizeItem}>
-                    <Text style={styles.sizeVolume}>{item.volume} ml</Text>
-                    {item.price && <Text style={styles.sizePrice}>${item.price}</Text>}
-                  </View>
-                ))}
-              </ScrollView>
-            </View>
-          )}
-
-          {description && (
-            <View style={styles.descriptionContainer}>
-              <Text style={styles.sectionTitle}>Description</Text>
-              <Text style={styles.description}>{description}</Text>
-            </View>
-          )}
-
-          {notes && <NotesSection notes={notes} />}
+    <ScrollView style={styles.container}>
+      {fragrance.images && fragrance.images.length > 0 && (
+        <Image
+          source={{ uri: fragrance.images[0].url }}
+          style={styles.image}
+          resizeMode="contain"
+        />
+      )}
+      <View style={styles.detailsContainer}>
+        <Text style={styles.name}>{fragrance.name}</Text>
+        <Text style={styles.brand}>{fragrance.brand}</Text>
+        <View style={styles.ratingContainer}>
+          <Icon name="star" size={20} color="#FFD700" />
+          <Text style={styles.rating}>{fragrance.rating?.toFixed(1) || 'N/A'}</Text>
         </View>
-      </Animated.ScrollView>
-
-      <View style={styles.footer}>
-        <CollectionButton onAddToCollection={handleAddToCollection} isAuthenticated={!!authState.userToken} />
+        <View style={styles.ratingInputContainer}>
+          <TextInput
+            style={styles.ratingInput}
+            placeholder="Rate (0-5)"
+            value={rating}
+            onChangeText={setRating}
+            keyboardType="numeric"
+          />
+          <TouchableOpacity style={styles.rateButton} onPress={handleRateFragrance}>
+            <Text style={styles.rateButtonText}>Submit Rating</Text>
+          </TouchableOpacity>
+        </View>
+        <Text style={styles.sectionTitle}>Description</Text>
+        <Text style={styles.description}>{fragrance.description || 'No description available'}</Text>
+        <Text style={styles.sectionTitle}>Notes</Text>
+        <View style={styles.notesContainer}>
+          <View style={styles.noteColumn}>
+            <Text style={styles.noteTitle}>Top Notes</Text>
+            {fragrance.notes?.top?.map((note, index) => (
+              <Text key={index} style={styles.note}>{note}</Text>
+            ))}
+          </View>
+          <View style={styles.noteColumn}>
+            <Text style={styles.noteTitle}>Middle Notes</Text>
+            {fragrance.notes?.middle?.map((note, index) => (
+              <Text key={index} style={styles.note}>{note}</Text>
+            ))}
+          </View>
+          <View style={styles.noteColumn}>
+            <Text style={styles.noteTitle}>Base Notes</Text>
+            {fragrance.notes?.base?.map((note, index) => (
+              <Text key={index} style={styles.note}>{note}</Text>
+            ))}
+          </View>
+        </View>
+        <TouchableOpacity style={styles.addButton} onPress={handleAddToCloset}>
+          <Text style={styles.addButtonText}>Add to My Closet</Text>
+        </TouchableOpacity>
       </View>
-    </View>
-  )
-}
+    </ScrollView>
+  );
+};
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f8f8f8",
+    backgroundColor: '#fff',
   },
-  headerBackground: {
-    backgroundColor: "white",
-    height: "100%",
-    borderBottomWidth: 1,
-    borderBottomColor: "#eee",
+  center: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
   },
-  shareButton: {
-    padding: 10,
-    marginRight: 10,
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: '#6b7280',
   },
-  imageContainer: {
-    height: 300,
-    width: "100%",
-    backgroundColor: "#eee",
+  errorText: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#ef4444',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  errorSubtext: {
+    fontSize: 16,
+    color: '#6b7280',
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  retryButton: {
+    backgroundColor: '#6366f1',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '600',
   },
   image: {
-    width: "100%",
-    height: "100%",
+    width: '100%',
+    height: 300,
   },
-  contentContainer: {
-    backgroundColor: "white",
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    marginTop: -20,
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 100,
-  },
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 20,
-  },
-  brand: {
-    fontSize: 16,
-    color: "#666",
-    marginBottom: 5,
+  detailsContainer: {
+    padding: 20,
   },
   name: {
     fontSize: 24,
-    fontWeight: "bold",
-    color: "#333",
-    width: width * 0.6,
+    fontWeight: 'bold',
+    marginBottom: 5,
+  },
+  brand: {
+    fontSize: 18,
+    color: '#666',
+    marginBottom: 15,
   },
   ratingContainer: {
-    alignItems: "flex-end",
-  },
-  ratingText: {
-    fontSize: 12,
-    color: "#666",
-    marginTop: 5,
-  },
-  detailsRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 20,
-    backgroundColor: "#f9f9f9",
-    borderRadius: 10,
-    padding: 15,
   },
-  detailItem: {
-    width: "50%",
-    marginBottom: 10,
+  rating: {
+    marginLeft: 5,
+    fontSize: 16,
   },
-  detailLabel: {
-    fontSize: 12,
-    color: "#666",
-    marginBottom: 3,
+  ratingInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
   },
-  detailValue: {
+  ratingInput: {
+    flex: 1,
+    height: 40,
+    borderColor: '#ddd',
+    borderWidth: 1,
+    borderRadius: 5,
+    paddingHorizontal: 10,
+    marginRight: 10,
+  },
+  rateButton: {
+    backgroundColor: '#34C759',
+    padding: 10,
+    borderRadius: 5,
+  },
+  rateButtonText: {
+    color: 'white',
+    fontWeight: 'bold',
     fontSize: 14,
-    fontWeight: "600",
-    color: "#333",
-  },
-  sizeContainer: {
-    marginBottom: 20,
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: "bold",
+    fontWeight: 'bold',
+    marginTop: 10,
     marginBottom: 10,
-    color: "#333",
-  },
-  sizeItem: {
-    backgroundColor: "#f0f0f0",
-    borderRadius: 10,
-    padding: 15,
-    marginRight: 10,
-    alignItems: "center",
-    minWidth: 80,
-  },
-  sizeVolume: {
-    fontSize: 16,
-    fontWeight: "bold",
-    color: "#333",
-  },
-  sizePrice: {
-    fontSize: 14,
-    color: "#6A0DAD",
-    marginTop: 5,
-  },
-  descriptionContainer: {
-    marginBottom: 20,
   },
   description: {
+    fontSize: 16,
+    lineHeight: 24,
+    marginBottom: 20,
+  },
+  notesContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 30,
+  },
+  noteColumn: {
+    flex: 1,
+  },
+  noteTitle: {
+    fontWeight: 'bold',
+    marginBottom: 5,
+  },
+  note: {
     fontSize: 14,
-    lineHeight: 22,
-    color: "#444",
+    marginBottom: 3,
   },
-  footer: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: "white",
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderTopWidth: 1,
-    borderTopColor: "#eee",
+  addButton: {
+    backgroundColor: 'tomato',
+    padding: 15,
+    borderRadius: 5,
+    alignItems: 'center',
+    marginTop: 20,
   },
-})
+  addButtonText: {
+    color: 'white',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+});
 
-export default FragranceDetailScreen
+export default FragranceDetailScreen;

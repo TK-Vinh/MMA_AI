@@ -3,8 +3,8 @@ const mongoose = require('mongoose');
 const fragranceSchema = new mongoose.Schema({
   name: {
     type: String,
-    required: [true, 'Fragrance name is required'],
-    trim: true
+    // required: [true, 'Fragrance name is required'],
+    
   },
   images: [{
     url: String,
@@ -13,8 +13,8 @@ const fragranceSchema = new mongoose.Schema({
   }],
   brand: {
     type: String,
-    required: [true, 'Brand is required'],
-    trim: true
+    // required: [true, 'Brand is required'],
+   
   },
   category: {
     type: String,

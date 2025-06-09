@@ -1,469 +1,584 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useContext, useEffect, useState } from "react"
 import {
   View,
-  Text,
   FlatList,
-  Image,
-  TouchableOpacity,
+  Text,
   StyleSheet,
+  TouchableOpacity,
   ActivityIndicator,
+  TextInput,
+  Modal,
   ScrollView,
-  RefreshControl,
-  Alert,
+  SafeAreaView,
 } from "react-native"
-import { useAuth } from "../context/AuthContext"
-import { useFragrance } from "../context/FragranceContext"
-import { useCollection } from "../context/CollectionContext"
-import { Ionicons } from "@expo/vector-icons"
-import RatingStars from "../components/RatingStars"
+import { AuthContext } from "../context/AuthContext"
+import FragranceCard from "../components/FragranceCard"
+import { getAllFragrances } from "../api/fragrances"
+
+// Custom Dropdown Component
+const CustomDropdown = ({ placeholder, value, options, onSelect, multiSelect = false, icon = "▼" }) => {
+  const [isVisible, setIsVisible] = useState(false)
+  const [selectedItems, setSelectedItems] = useState(multiSelect ? value || [] : value)
+
+  const handleSelect = (option) => {
+    if (multiSelect) {
+      const newSelection = selectedItems.includes(option)
+        ? selectedItems.filter((item) => item !== option)
+        : [...selectedItems, option]
+      setSelectedItems(newSelection)
+      onSelect(newSelection)
+    } else {
+      setSelectedItems(option)
+      onSelect(option)
+      setIsVisible(false)
+    }
+  }
+
+  const getDisplayText = () => {
+    if (multiSelect) {
+      return selectedItems.length > 0 ? `${selectedItems.length} selected` : placeholder
+    }
+    return selectedItems || placeholder
+  }
+
+  return (
+    <View style={styles.dropdownContainer}>
+      <TouchableOpacity style={styles.dropdownButton} onPress={() => setIsVisible(true)}>
+        <Text style={[styles.dropdownButtonText, !selectedItems && styles.placeholderText]}>{getDisplayText()}</Text>
+        <Text style={styles.dropdownIcon}>{icon}</Text>
+      </TouchableOpacity>
+
+      <Modal visible={isVisible} transparent={true} animationType="fade" onRequestClose={() => setIsVisible(false)}>
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setIsVisible(false)}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{placeholder}</Text>
+              <TouchableOpacity onPress={() => setIsVisible(false)} style={styles.closeButton}>
+                <Text style={styles.closeButtonText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.optionsList}>
+              {multiSelect && (
+                <TouchableOpacity
+                  style={styles.optionItem}
+                  onPress={() => {
+                    setSelectedItems([])
+                    onSelect([])
+                  }}
+                >
+                  <Text style={styles.clearAllText}>Clear All</Text>
+                </TouchableOpacity>
+              )}
+
+              {options.map((option, index) => (
+                <TouchableOpacity
+                  key={index}
+                  style={[
+                    styles.optionItem,
+                    (multiSelect ? selectedItems.includes(option) : selectedItems === option) && styles.selectedOption,
+                  ]}
+                  onPress={() => handleSelect(option)}
+                >
+                  <Text
+                    style={[
+                      styles.optionText,
+                      (multiSelect ? selectedItems.includes(option) : selectedItems === option) &&
+                        styles.selectedOptionText,
+                    ]}
+                  >
+                    {option}
+                  </Text>
+                  {(multiSelect ? selectedItems.includes(option) : selectedItems === option) && (
+                    <Text style={styles.checkmark}>✓</Text>
+                  )}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+    </View>
+  )
+}
 
 const HomeScreen = ({ navigation }) => {
-  const { user } = useAuth()
-  const { fragrances, isLoading: fragranceLoading, fetchFragrances, error: fragranceError } = useFragrance()
-  const { stats, isLoading: collectionLoading, fetchStats, error: collectionError } = useCollection()
-  const [refreshing, setRefreshing] = useState(false)
+  const [fragrances, setFragrances] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [filters, setFilters] = useState({
+    search: "",
+    category: "",
+    gender: "",
+    brand: "",
+  })
+  const [showFilters, setShowFilters] = useState(false)
+  const { userToken } = useContext(AuthContext)
 
-  // Mock categories data (you can replace with API call later)
-  const categories = [
-    { id: "1", name: "Floral", image: "https://via.placeholder.com/120x100/FFB6C1/FFFFFF?text=Floral" },
-    { id: "2", name: "Woody", image: "https://via.placeholder.com/120x100/8B4513/FFFFFF?text=Woody" },
-    { id: "3", name: "Citrus", image: "https://via.placeholder.com/120x100/FFA500/FFFFFF?text=Citrus" },
-    { id: "4", name: "Oriental", image: "https://via.placeholder.com/120x100/800080/FFFFFF?text=Oriental" },
-    { id: "5", name: "Fresh", image: "https://via.placeholder.com/120x100/00CED1/FFFFFF?text=Fresh" },
-    { id: "6", name: "Gourmand", image: "https://via.placeholder.com/120x100/D2691E/FFFFFF?text=Gourmand" },
+  // Enum options from your Fragrance model
+  const categoryOptions = [
+    "Fresh",
+    "Floral",
+    "Oriental",
+    "Woody",
+    "Citrus",
+    "Gourmand",
+    "Aquatic",
+    "Spicy",
+    "Green",
+    "Fruity",
   ]
 
+  const genderOptions = ["Men", "Women", "Unisex"]
+
   useEffect(() => {
-    const initializeData = async () => {
-      await fetchFragrances(1, true)
-      if (user) {
-        await fetchStats()
+    const fetchFragrances = async () => {
+      try {
+        setLoading(true)
+        const data = await getAllFragrances(filters, userToken)
+        setFragrances(data)
+      } catch (err) {
+        setError(err.message)
+      } finally {
+        setLoading(false)
       }
     }
 
-    initializeData()
-  }, [user])
+    fetchFragrances()
+  }, [filters, userToken])
 
-  useEffect(() => {
-    if (fragranceError) {
-      Alert.alert("Error", fragranceError)
-    }
-  }, [fragranceError])
+  const handleFragrancePress = (fragranceId) => {
+  console.log('Navigating to FragranceDetail with fragranceId:', fragranceId);
+  navigation.navigate('FragranceDetail', { fragranceId });
+};
 
-  useEffect(() => {
-    if (collectionError) {
-      Alert.alert("Error", collectionError)
-    }
-  }, [collectionError])
-
-  const onRefresh = async () => {
-    setRefreshing(true)
-    await fetchFragrances(1, true)
-    if (user) {
-      await fetchStats()
-    }
-    setRefreshing(false)
-  }
-
-  const handleCategoryPress = (category) => {
-    navigation.navigate("Explore", {
-      screen: "ExploreMain",
-      params: { initialCategory: category.name },
+  const clearAllFilters = () => {
+    setFilters({
+      search: "",
+      category: "",
+      gender: "",
+      brand: "",
     })
   }
 
-  const handleFragrancePress = (fragrance) => {
-    navigation.navigate("FragranceDetail", {
-      id: fragrance._id,
-      fragrance: fragrance,
-    })
-  }
+  const hasActiveFilters = Object.values(filters).some((value) => value !== "")
 
-  const handleViewCollection = () => {
-    if (user) {
-      navigation.navigate("Collection")
-    } else {
-      Alert.alert("Login Required", "Please login to view your collection", [
-        { text: "Cancel", style: "cancel" },
-        { text: "Login", onPress: () => navigation.navigate("Auth") },
-      ])
-    }
-  }
-
-  const handleExploreAll = () => {
-    navigation.navigate("Explore")
-  }
-
-  const renderCategory = ({ item }) => (
-    <TouchableOpacity style={styles.categoryCard} onPress={() => handleCategoryPress(item)}>
-      <Image source={{ uri: item.image }} style={styles.categoryImage} />
-      <Text style={styles.categoryName}>{item.name}</Text>
-    </TouchableOpacity>
-  )
-
-  const renderFeatured = ({ item }) => (
-    <TouchableOpacity 
-    style={styles.featuredCard}
-    onPress={() => navigation.navigate('FragranceDetail', { fragranceId: item._id })}
-  >
-    {item.images && item.images.length > 0 ? (
-      <Image source={{ uri: item.images[0].url }} style={styles.featuredImage} />
-    ) : (
-      <View style={styles.fragranceImagePlaceholder}>
-        <Text style={styles.fragranceInitial}>{item.name.charAt(0)}</Text>
-      </View>
-    )}
-    <View style={styles.featuredContent}>
-      <Text style={styles.featuredBrand}>{item.brand}</Text>
-      <Text style={styles.featuredName} numberOfLines={2}>{item.name}</Text>
-      <RatingStars rating={item.rating || 0} size={14} />
-      {item.size && item.size.length > 0 && (
-        <Text style={styles.featuredPrice}>${item.size[0].price}</Text>
-      )}
-    </View>
-  </TouchableOpacity>
-  )
-
-  const renderCollectionStats = () => {
-    if (!user) return null
-
+  if (loading) {
     return (
-      <View style={styles.statsSection}>
-        <Text style={styles.sectionTitle}>Your Collection</Text>
-        <View style={styles.statsContainer}>
-          <TouchableOpacity
-            style={styles.statCard}
-            onPress={() => navigation.navigate("Collection", { initialStatus: "owned" })}
-          >
-            <Ionicons name="checkmark-circle" size={24} color="#4CAF50" />
-            <Text style={styles.statNumber}>{stats.owned}</Text>
-            <Text style={styles.statLabel}>Owned</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.statCard}
-            onPress={() => navigation.navigate("Collection", { initialStatus: "wishlist" })}
-          >
-            <Ionicons name="heart" size={24} color="#FF6B6B" />
-            <Text style={styles.statNumber}>{stats.wishlist}</Text>
-            <Text style={styles.statLabel}>Wishlist</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.statCard}
-            onPress={() => navigation.navigate("Collection", { initialStatus: "tried" })}
-          >
-            <Ionicons name="flask" size={24} color="#FF9800" />
-            <Text style={styles.statNumber}>{stats.tried}</Text>
-            <Text style={styles.statLabel}>Tried</Text>
-          </TouchableOpacity>
-
-          <View style={styles.statCard}>
-            <Ionicons name="cash" size={24} color="#8A2BE2" />
-            <Text style={styles.statNumber}>${stats.totalSpent || 0}</Text>
-            <Text style={styles.statLabel}>Spent</Text>
-          </View>
-        </View>
-      </View>
-    )
-  }
-
-  if (fragranceLoading && fragrances.length === 0) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#8A2BE2" />
+      <View style={styles.center}>
+        <ActivityIndicator size="large" color="#6366f1" />
         <Text style={styles.loadingText}>Loading fragrances...</Text>
       </View>
     )
   }
 
-  // Get featured fragrances (top rated or first 6)
-  const featuredFragrances = fragrances
-    .filter((f) => f.rating >= 4.0)
-    .sort((a, b) => b.rating - a.rating)
-    .slice(0, 6)
-
-  // If no high-rated fragrances, use first 6
-  const displayedFeatured = featuredFragrances.length > 0 ? featuredFragrances : fragrances.slice(0, 6)
+  if (error) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.errorText}>😔 Oops! Something went wrong</Text>
+        <Text style={styles.errorSubtext}>{error}</Text>
+        <TouchableOpacity
+          style={styles.retryButton}
+          onPress={() => {
+            setError(null)
+            setLoading(true)
+          }}
+        >
+          <Text style={styles.retryButtonText}>Try Again</Text>
+        </TouchableOpacity>
+      </View>
+    )
+  }
 
   return (
-    <ScrollView
-      style={styles.container}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={["#8A2BE2"]} />}
-      showsVerticalScrollIndicator={false}
-    >
+    <SafeAreaView style={styles.container}>
+      {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerText}>Welcome{user ? `, ${user.username}` : ""}!</Text>
-        <Text style={styles.headerSubtext}>Discover your perfect scent</Text>
+        <Text style={styles.headerTitle}>Discover Fragrances</Text>
+        <Text style={styles.headerSubtitle}>{fragrances.length} fragrances available</Text>
       </View>
 
-      {renderCollectionStats()}
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Fragrance Categories</Text>
-        <FlatList
-          data={categories}
-          renderItem={renderCategory}
-          keyExtractor={(item) => item.id}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.categoryList}
+      {/* Search Bar */}
+      <View style={styles.searchContainer}>
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search fragrances, brands..."
+          value={filters.search}
+          onChangeText={(text) => setFilters({ ...filters, search: text })}
+          placeholderTextColor="#9ca3af"
         />
+        <TouchableOpacity style={styles.filterToggle} onPress={() => setShowFilters(!showFilters)}>
+          <Text style={styles.filterIcon}>⚙️</Text>
+        </TouchableOpacity>
       </View>
 
-      <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Featured Fragrances</Text>
-          <TouchableOpacity onPress={handleExploreAll}>
-            <Text style={styles.seeAllText}>See All</Text>
-          </TouchableOpacity>
-        </View>
-        <FlatList
-          data={displayedFeatured}
-          renderItem={renderFeatured}
-          keyExtractor={(item) => item._id}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.featuredList}
-          ListEmptyComponent={
-            <View style={styles.emptyFeatured}>
-              <Text style={styles.emptyText}>No featured fragrances available</Text>
+      {/* Filters Section */}
+      {showFilters && (
+        <View style={styles.filtersSection}>
+          <View style={styles.filtersHeader}>
+            <Text style={styles.filtersTitle}>Filters</Text>
+            {hasActiveFilters && (
+              <TouchableOpacity onPress={clearAllFilters}>
+                <Text style={styles.clearFiltersText}>Clear All</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          <View style={styles.filtersGrid}>
+            <View style={styles.filterRow}>
+              <CustomDropdown
+                placeholder="Select Category"
+                value={filters.category}
+                options={categoryOptions}
+                onSelect={(value) => setFilters({ ...filters, category: value })}
+              />
+
+              <CustomDropdown
+                placeholder="Select Gender"
+                value={filters.gender}
+                options={genderOptions}
+                onSelect={(value) => setFilters({ ...filters, gender: value })}
+              />
             </View>
-          }
-        />
-      </View>
 
-      <TouchableOpacity style={styles.myClosetButton} onPress={handleViewCollection}>
-        <Ionicons name="library" size={20} color="#fff" style={styles.buttonIcon} />
-        <Text style={styles.myClosetText}>{user ? "View My Fragrance Collection" : "Login to View Collection"}</Text>
-      </TouchableOpacity>
+            <TextInput
+              style={styles.brandInput}
+              placeholder="Filter by brand..."
+              value={filters.brand}
+              onChangeText={(text) => setFilters({ ...filters, brand: text })}
+              placeholderTextColor="#9ca3af"
+            />
+          </View>
+        </View>
+      )}
 
-      <TouchableOpacity style={styles.exploreButton} onPress={handleExploreAll}>
-        <Ionicons name="search" size={20} color="#8A2BE2" style={styles.buttonIcon} />
-        <Text style={styles.exploreButtonText}>Explore All Fragrances</Text>
-      </TouchableOpacity>
+      {/* Active Filters Display */}
+      {hasActiveFilters && (
+        <ScrollView horizontal style={styles.activeFiltersContainer} showsHorizontalScrollIndicator={false}>
+          {filters.search && (
+            <View style={styles.activeFilter}>
+              <Text style={styles.activeFilterText}>"{filters.search}"</Text>
+              <TouchableOpacity onPress={() => setFilters({ ...filters, search: "" })}>
+                <Text style={styles.removeFilter}>✕</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+          {filters.category && (
+            <View style={styles.activeFilter}>
+              <Text style={styles.activeFilterText}>{filters.category}</Text>
+              <TouchableOpacity onPress={() => setFilters({ ...filters, category: "" })}>
+                <Text style={styles.removeFilter}>✕</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+          {filters.gender && (
+            <View style={styles.activeFilter}>
+              <Text style={styles.activeFilterText}>{filters.gender}</Text>
+              <TouchableOpacity onPress={() => setFilters({ ...filters, gender: "" })}>
+                <Text style={styles.removeFilter}>✕</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+          {filters.brand && (
+            <View style={styles.activeFilter}>
+              <Text style={styles.activeFilterText}>{filters.brand}</Text>
+              <TouchableOpacity onPress={() => setFilters({ ...filters, brand: "" })}>
+                <Text style={styles.removeFilter}>✕</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </ScrollView>
+      )}
 
-      <View style={styles.bottomSpacing} />
-    </ScrollView>
+      {/* Fragrances List */}
+      <FlatList
+  data={fragrances}
+  keyExtractor={(item) => item._id}
+  renderItem={({ item }) => (
+    <TouchableOpacity onPress={() => handleFragrancePress(item._id)}>
+      <FragranceCard fragrance={item} />
+    </TouchableOpacity>
+  )}
+  contentContainerStyle={styles.list}
+  showsVerticalScrollIndicator={false}
+  ListEmptyComponent={
+    <View style={styles.emptyState}>
+      <Text style={styles.emptyStateText}>🔍 No fragrances found</Text>
+      <Text style={styles.emptyStateSubtext}>Try adjusting your filters or search terms</Text>
+    </View>
+  }
+/>
+    </SafeAreaView>
   )
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f8f9fa",
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#f8f9fa",
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: "#666",
+    backgroundColor: "#f8fafc",
   },
   header: {
     paddingHorizontal: 20,
-    paddingTop: 60,
-    paddingBottom: 20,
-    backgroundColor: "#8A2BE2",
+    paddingVertical: 16,
+    backgroundColor: "#ffffff",
+    borderBottomWidth: 1,
+    borderBottomColor: "#e5e7eb",
   },
-  headerText: {
-    fontSize: 24,
+  headerTitle: {
+    fontSize: 28,
     fontWeight: "bold",
-    color: "#fff",
+    color: "#1f2937",
+    marginBottom: 4,
   },
-  headerSubtext: {
+  headerSubtitle: {
     fontSize: 16,
-    color: "rgba(255, 255, 255, 0.8)",
-    marginTop: 5,
+    color: "#6b7280",
   },
-  section: {
-    marginTop: 20,
+  searchContainer: {
+    flexDirection: "row",
     paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: "#ffffff",
+    alignItems: "center",
+    gap: 12,
   },
-  sectionHeader: {
+  searchInput: {
+    flex: 1,
+    height: 48,
+    backgroundColor: "#f3f4f6",
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    fontSize: 16,
+    color: "#1f2937",
+  },
+  filterToggle: {
+    width: 48,
+    height: 48,
+    backgroundColor: "#6366f1",
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  filterIcon: {
+    fontSize: 20,
+  },
+  filtersSection: {
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#e5e7eb",
+  },
+  filtersHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 15,
+    marginBottom: 16,
   },
-  sectionTitle: {
+  filtersTitle: {
     fontSize: 18,
     fontWeight: "600",
-    marginBottom: 15,
-    color: "#333",
+    color: "#1f2937",
   },
-  seeAllText: {
-    color: "#8A2BE2",
-    fontWeight: "600",
-    fontSize: 14,
+  clearFiltersText: {
+    color: "#6366f1",
+    fontSize: 16,
+    fontWeight: "500",
   },
-  statsSection: {
-    marginTop: 20,
-    paddingHorizontal: 20,
+  filtersGrid: {
+    gap: 12,
   },
-  statsContainer: {
+  filterRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 15,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    gap: 12,
   },
-  statCard: {
-    alignItems: "center",
+  dropdownContainer: {
     flex: 1,
   },
-  statNumber: {
+  dropdownButton: {
+    height: 48,
+    backgroundColor: "#f3f4f6",
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  dropdownButtonText: {
+    fontSize: 16,
+    color: "#1f2937",
+  },
+  placeholderText: {
+    color: "#9ca3af",
+  },
+  dropdownIcon: {
+    fontSize: 12,
+    color: "#6b7280",
+  },
+  brandInput: {
+    height: 48,
+    backgroundColor: "#f3f4f6",
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    fontSize: 16,
+    color: "#1f2937",
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modalContent: {
+    backgroundColor: "#ffffff",
+    borderRadius: 16,
+    width: "85%",
+    maxHeight: "70%",
+    elevation: 5,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: "#e5e7eb",
+  },
+  modalTitle: {
     fontSize: 18,
+    fontWeight: "600",
+    color: "#1f2937",
+  },
+  closeButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#f3f4f6",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  closeButtonText: {
+    fontSize: 16,
+    color: "#6b7280",
+  },
+  optionsList: {
+    maxHeight: 300,
+  },
+  optionItem: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f3f4f6",
+  },
+  selectedOption: {
+    backgroundColor: "#eff6ff",
+  },
+  optionText: {
+    fontSize: 16,
+    color: "#1f2937",
+  },
+  selectedOptionText: {
+    color: "#2563eb",
+    fontWeight: "500",
+  },
+  checkmark: {
+    fontSize: 16,
+    color: "#2563eb",
     fontWeight: "bold",
-    color: "#333",
-    marginTop: 5,
   },
-  statLabel: {
-    fontSize: 12,
-    color: "#666",
-    marginTop: 2,
-  },
-  categoryList: {
-    paddingRight: 20,
-  },
-  categoryCard: {
-    width: 120,
-    marginRight: 15,
-    backgroundColor: "#fff",
-    borderRadius: 10,
-    overflow: "hidden",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  categoryImage: {
-    width: "100%",
-    height: 100,
-    resizeMode: "cover",
-  },
-  categoryName: {
-    padding: 10,
-    textAlign: "center",
+  clearAllText: {
+    fontSize: 16,
+    color: "#ef4444",
     fontWeight: "500",
-    color: "#333",
   },
-  featuredList: {
-    paddingRight: 20,
+  activeFiltersContainer: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    backgroundColor: "#ffffff",
   },
-  featuredCard: {
-    width: 150,
-    marginRight: 15,
-    backgroundColor: "#fff",
-    borderRadius: 10,
-    overflow: "hidden",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  featuredImage: {
-    width: "100%",
-    height: 150,
-    resizeMode: "cover",
-    backgroundColor: "#f0f0f0",
-  },
-  featuredContent: {
-    padding: 10,
-  },
-  featuredBrand: {
-    fontSize: 12,
-    color: "#666",
-    marginBottom: 2,
-  },
-  featuredName: {
-    fontSize: 14,
-    fontWeight: "500",
-    color: "#333",
-    marginBottom: 5,
-  },
-  ratingContainer: {
+  activeFilter: {
     flexDirection: "row",
     alignItems: "center",
-  },
-  ratingText: {
-    fontSize: 12,
-    color: "#666",
-    marginLeft: 4,
-  },
-  emptyFeatured: {
-    width: 200,
-    height: 150,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#f0f0f0",
-    borderRadius: 10,
-  },
-  emptyText: {
-    color: "#666",
-    fontSize: 14,
-  },
-  myClosetButton: {
-    marginTop: 30,
-    marginHorizontal: 20,
-    backgroundColor: "#8A2BE2",
-    padding: 15,
-    borderRadius: 10,
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  exploreButton: {
-    marginTop: 15,
-    marginHorizontal: 20,
-    backgroundColor: "#fff",
-    padding: 15,
-    borderRadius: 10,
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "center",
-    borderWidth: 2,
-    borderColor: "#8A2BE2",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  buttonIcon: {
+    backgroundColor: "#eff6ff",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
     marginRight: 8,
+    gap: 6,
   },
-  myClosetText: {
-    color: "#fff",
+  activeFilterText: {
+    fontSize: 14,
+    color: "#2563eb",
+    fontWeight: "500",
+  },
+  removeFilter: {
+    fontSize: 12,
+    color: "#2563eb",
     fontWeight: "bold",
-    fontSize: 16,
   },
-  exploreButtonText: {
-    color: "#8A2BE2",
-    fontWeight: "bold",
-    fontSize: 16,
+  list: {
+    padding: 20,
+    paddingBottom: 100,
   },
-  bottomSpacing: {
-    height: 30,
+  center: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: "#6b7280",
+  },
+  errorText: {
+    fontSize: 20,
+    fontWeight: "600",
+    color: "#ef4444",
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  errorSubtext: {
+    fontSize: 16,
+    color: "#6b7280",
+    textAlign: "center",
+    marginBottom: 24,
+  },
+  retryButton: {
+    backgroundColor: "#6366f1",
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: "#ffffff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  emptyState: {
+    alignItems: "center",
+    paddingVertical: 60,
+  },
+  emptyStateText: {
+    fontSize: 20,
+    fontWeight: "600",
+    color: "#6b7280",
+    marginBottom: 8,
+  },
+  emptyStateSubtext: {
+    fontSize: 16,
+    color: "#9ca3af",
+    textAlign: "center",
   },
 })
 
-export default HomeScreen
+export default HomeScreen;

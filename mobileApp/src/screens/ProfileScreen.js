@@ -2,18 +2,22 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
 import { useAuth } from '../context/AuthContext';
 
-const ProfileScreen = () => {
-  const { user, logout } = useAuth();
+const ProfileScreen = ({ navigation }) => {
+  const { user, isAuthenticated, isLoading, logout } = useAuth();
+
+  if (isLoading) {
+    return <ActivityIndicator size="large" />;
+  }
 
   return (
     <View style={styles.container}>
       <View style={styles.profileHeader}>
-        <Image 
-          source={require('../../assets/bread.png')} 
-          style={styles.profileImage}
-        />
-        <Text style={styles.username}>{user?.username || 'Guest'}</Text>
+        <Image source={require('../../assets/bread.png')} style={styles.profileImage} />
+        <Text style={styles.username}>
+          {isAuthenticated ? user?.username : 'Guest'}
+        </Text>
       </View>
+
 
       <View style={styles.statsContainer}>
         <View style={styles.statItem}>
@@ -30,24 +34,44 @@ const ProfileScreen = () => {
         </View>
       </View>
 
-      <TouchableOpacity style={styles.button}>
-        <Text style={styles.buttonText}>Edit Profile</Text>
-      </TouchableOpacity>
+      {isAuthenticated ? (
+        <>
+          <TouchableOpacity style={styles.button}>
+            <Text style={styles.buttonText}>Edit Profile</Text>
+          </TouchableOpacity>
 
-      <TouchableOpacity style={styles.button}>
-        <Text style={styles.buttonText}>My Collections</Text>
-      </TouchableOpacity>
+          <TouchableOpacity style={styles.button}>
+            <Text style={styles.buttonText}>My Closet</Text>
+          </TouchableOpacity>
 
-      <TouchableOpacity style={styles.button}>
-        <Text style={styles.buttonText}>Settings</Text>
-      </TouchableOpacity>
+          {user?.role === 'admin' && (
+            <TouchableOpacity 
+              style={styles.button}
+              onPress={() => navigation.navigate('Browse', { screen: 'AdminPanel' })}
+            >
+              <Text style={styles.buttonText}>Management</Text>
+            </TouchableOpacity>
+          )}
 
-      <TouchableOpacity 
-        style={[styles.button, styles.logoutButton]}
-        onPress={logout}
-      >
-        <Text style={[styles.buttonText, styles.logoutText]}>Logout</Text>
-      </TouchableOpacity>
+          <TouchableOpacity style={styles.button}>
+            <Text style={styles.buttonText}>Settings</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.button, styles.logoutButton]}
+            onPress={logout}
+          >
+            <Text style={[styles.buttonText, styles.logoutText]}>Logout</Text>
+          </TouchableOpacity>
+        </>
+      ) : (
+        <TouchableOpacity 
+          style={styles.loginButton}
+          onPress={() => navigation.navigate('Auth', { screen: 'Login' })}
+        >
+          <Text style={styles.loginText}>Sign In</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 };
@@ -111,6 +135,13 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   logoutText: {
+    color: '#fff',
+  },
+  loginButton: {
+    backgroundColor: 'tomato',
+    marginTop: 20,
+  },
+  loginText: {
     color: '#fff',
   },
 });
