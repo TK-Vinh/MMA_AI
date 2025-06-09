@@ -4,7 +4,6 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const authRouter = require('./src/routes/AuthRoutes');
 const chatRouter = require('./src/routes/ChatRoutes');
-const collectionRouter = require('./src/routes/CollectionRoutes');
 const fragranceRouter = require('./src/routes/FragranceRoutes');
 const userRouter = require('./src/routes/UserRoutes');
 
@@ -22,7 +21,6 @@ app.use((req, res, next) => {
 // Routes
 app.use('/api/auth', authRouter);
 app.use('/api/chat', chatRouter);
-app.use('/api/collection', collectionRouter);
 app.use('/api/fragrances', fragranceRouter);
 app.use('/api/user', userRouter);
 
