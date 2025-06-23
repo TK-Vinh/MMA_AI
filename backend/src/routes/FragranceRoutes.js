@@ -1,47 +1,24 @@
 const express = require('express');
-
 const router = express.Router();
-
-const { protect, adminOnly } = require('../middlewares/auth');
-
+const { protect } = require('../middlewares/auth');
 const fragranceController = require('../controllers/FragranceController');
-
 const fragranceImageController = require('../controllers/FragranceImageController');
 
-
-
 router.route('')
-
   .get(fragranceController.getAllFragrances)
-
-  .post(protect, adminOnly, fragranceController.createFragrance);
-
-
+  .post(protect, fragranceController.createFragrance);
 
 router.route('/:id')
-
   .get(fragranceController.getFragranceById)
-
-  .put(protect, adminOnly, fragranceController.updateFragrance)
-
-  .delete(protect, adminOnly, fragranceController.deleteFragrance);
-
-
+  .put(protect, fragranceController.updateFragrance)
+  .delete(protect, fragranceController.deleteFragrance);
 
 router.route('/:id/images')
-
-  .post(protect, adminOnly, fragranceImageController.uploadImage);
-
-
+  .post(protect, fragranceImageController.uploadImage);
 
 router.route('/:id/images/:imageId')
-
-  .delete(protect, adminOnly, fragranceImageController.deleteImage);
-
-
+  .delete(protect, fragranceImageController.deleteImage);
 
 router.put('/:id/rating', fragranceController.updateRating);
-
-
 
 module.exports = router;

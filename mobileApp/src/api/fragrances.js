@@ -159,3 +159,25 @@ export const deleteFragrance = async (id, token) => {
     throw error;
   }
 };
+
+export const uploadImageToS3 = async (fragranceId, formData, token) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/fragrances/${fragranceId}/images`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.message || 'Failed to upload image');
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Error uploading image to S3:', error);
+    throw error;
+  }
+};

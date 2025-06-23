@@ -11,10 +11,11 @@ import {
   ScrollView,
   Platform,
 } from 'react-native';
+import { uploadImageToS3 } from '../api/fragrances';
 import { Picker } from '@react-native-picker/picker';
 import BouncyCheckbox from 'react-native-bouncy-checkbox';
 import * as ImagePicker from 'expo-image-picker';
-import { MaterialIcons } from '@expo/vector-icons'; // Added for remove icon
+import { MaterialIcons } from '@expo/vector-icons';
 import { AuthContext } from '../context/AuthContext';
 import {
   getAllFragrances,
@@ -88,7 +89,7 @@ const ManageFragrancesScreen = () => {
     if (!hasPermission) return;
 
     let result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes:[ 'images','videos'], // Reverted to Images only
+      mediaTypes: ['images','videos'],
       allowsEditing: true,
       aspect: [4, 3],
       quality: 1,
@@ -99,54 +100,71 @@ const ManageFragrancesScreen = () => {
     }
   };
 
+  const uploadImage = async (fragranceId, imageUri) => {
+    try {
+      const formData = new FormData();
+      const fileName = imageUri.split('/').pop();
+      const fileType = fileName.split('.').pop();
+      const mimeType = `image/${fileType === 'jpg' ? 'jpeg' : fileType}`;
+
+      formData.append('image', {
+        uri: imageUri,
+        name: fileName,
+        type: mimeType,
+      });
+
+      const result = await uploadImageToS3(fragranceId, formData, userToken);
+      return result.images?.[result.images.length - 1]?.url || '';
+    } catch (error) {
+      console.error('Error uploading image:', error);
+      Alert.alert('Error', 'Failed to upload image');
+      return null;
+    }
+  };
+
   const handleCreateOrUpdate = async () => {
-    if (!form.name || !form.brand || !form.category || !form.gender || !form.concentration) {
-      Alert.alert('Error', 'Please fill in all required fields');
+    if (!form.category || !form.gender || !form.concentration) {
+      Alert.alert('Error', 'Please fill in all required fields (Category, Gender, Concentration)');
       return;
     }
 
     try {
-      const formData = new FormData();
-      Object.keys(form).forEach((key) => {
-        if (key === 'notes') {
-          formData.append('notes[top]', form.notes.top.join(','));
-          formData.append('notes[middle]', form.notes.middle.join(','));
-          formData.append('notes[base]', form.notes.base.join(','));
-        } else if (key === 'size') {
-          form.size.forEach((s, index) => {
-            formData.append(`size[${index}][volume]`, s.volume);
-            formData.append(`size[${index}][price]`, s.price);
-          });
-        } else if (key === 'tags') {
-          formData.append('tags', form.tags.join(','));
-        } else {
-          formData.append(key, form[key]);
-        }
-      });
+      const fragranceData = {
+        ...form,
+        size: form.size.map(s => ({
+          volume: s.volume ? Number(s.volume) : 0,
+          price: s.price ? Number(s.price) : 0,
+        })),
+        rating: form.rating ? Number(form.rating) : 0,
+        totalRatings: form.totalRatings ? Number(form.totalRatings) : 0,
+      };
 
-      if (image) {
-        const response = await fetch(image);
-        const blob = await response.blob();
-        const fileName = `fragrance-${Date.now()}.jpg`;
-        formData.append('image', {
-          uri: image,
-          type: 'image/jpeg',
-          name: fileName,
-        });
+      let result;
+      if (editingFragrance) {
+        result = await updateFragrance(editingFragrance._id, fragranceData, userToken);
+      } else {
+        result = await createFragrance(fragranceData, userToken);
+      }
+
+      let imageUrl = '';
+      if (image && (!editingFragrance || image !== editingFragrance.images?.[0]?.url)) {
+        imageUrl = await uploadImage(result._id, image);
+      }
+
+      if (imageUrl) {
+        result = await updateFragrance(result._id, { images: [{ url: imageUrl, key: imageUrl.split('/').pop() }] }, userToken);
       }
 
       if (editingFragrance) {
-        const updatedFragrance = await updateFragrance(editingFragrance._id, formData, userToken);
-        setFragrances(
-          fragrances.map((f) => (f._id === updatedFragrance._id ? updatedFragrance : f))
-        );
-        Alert.alert('Success', 'Fragrance updated successfully');
+        setFragrances(fragrances.map(f => f._id === result._id ? result : f));
       } else {
-        const newFragrance = await createFragrance(formData, userToken);
-        setFragrances([...fragrances, newFragrance]);
-        Alert.alert('Success', 'Fragrance created successfully');
+        setFragrances([...fragrances, result]);
       }
+
+      Alert.alert('Success', editingFragrance ? 'Fragrance updated successfully' : 'Fragrance created successfully');
       setModalVisible(false);
+      setEditingFragrance(null);
+      setImage(null);
       setForm({
         name: '',
         brand: '',
@@ -164,9 +182,8 @@ const ManageFragrancesScreen = () => {
         isActive: true,
         tags: [],
       });
-      setImage(null);
-      setEditingFragrance(null);
     } catch (error) {
+      console.error('Error in handleCreateOrUpdate:', error);
       Alert.alert('Error', error.message);
     }
   };
@@ -174,20 +191,22 @@ const ManageFragrancesScreen = () => {
   const handleEdit = (fragrance) => {
     setEditingFragrance(fragrance);
     setForm({
-      name: fragrance.name,
-      brand: fragrance.brand,
+      name: fragrance.name || '',
+      brand: fragrance.brand || '',
       description: fragrance.description || '',
       category: fragrance.category || 'Fresh',
       subcategory: fragrance.subcategory || '',
       gender: fragrance.gender || 'Unisex',
       concentration: fragrance.concentration || 'EDT',
       notes: fragrance.notes || { top: [], middle: [], base: [] },
-      size: fragrance.size || [{ volume: '', price: '' }],
+      size: fragrance.size && fragrance.size.length > 0
+        ? fragrance.size.map(s => ({ volume: s.volume.toString(), price: s.price.toString() }))
+        : [{ volume: '', price: '' }],
       releaseYear: fragrance.releaseYear ? fragrance.releaseYear.toString() : '',
       perfumer: fragrance.perfumer || '',
-      rating: fragrance.rating.toString(),
-      totalRatings: fragrance.totalRatings.toString(),
-      isActive: fragrance.isActive,
+      rating: fragrance.rating ? fragrance.rating.toString() : '0',
+      totalRatings: fragrance.totalRatings ? fragrance.totalRatings.toString() : '0',
+      isActive: fragrance.isActive ?? true,
       tags: fragrance.tags || [],
     });
     setImage(fragrance.images?.[0]?.url || null);
@@ -320,7 +339,6 @@ const ManageFragrancesScreen = () => {
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>{editingFragrance ? 'Edit Fragrance' : 'Create Fragrance'}</Text>
             <ScrollView>
-
               <TextInput
                 style={styles.input}
                 placeholder="Fragrance Name"
@@ -629,7 +647,7 @@ const styles = StyleSheet.create({
   sizeContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center', // Align items vertically
+    alignItems: 'center',
     marginBottom: 10,
   },
   sizeInput: {

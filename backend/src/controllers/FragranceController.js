@@ -1,30 +1,65 @@
 const Fragrance = require('../models/Fragrance');
-
+const { upload, processImage, uploadToS3 } = require('../config/s3Upload');
 const mongoose = require('mongoose');
-
+const { GoogleGenerativeAI } = require('@google/generative-ai');
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 
 // Create a new fragrance
 
-exports.createFragrance = async (req, res) => {
-
-  try {
-
-    const fragrance = new Fragrance(req.body);
-
-    const savedFragrance = await fragrance.save();
-
-    res.status(201).json(savedFragrance);
-
-  } catch (error) {
-
-    console.error('Error in createFragrance:', error);
-
-    res.status(400).json({ message: error.message });
-
+exports.createFragrance = [
+  upload.single('image'),
+  processImage,
+  uploadToS3,
+  async (req, res) => {
+    try {
+      let fragranceData = req.body;
+      
+      // If image was uploaded, use Gemini to analyze it
+      if (req.file) {
+        const model = genAI.getGenerativeModel({ model: "gemini-pro-vision" });
+        
+        // Convert image buffer to GoogleGenerativeAI.Part
+        const imagePart = {
+          inlineData: {
+            data: req.file.buffer.toString('base64'),
+            mimeType: req.file.mimetype
+          }
+        };
+        
+        // Prompt for Gemini
+        const prompt = "Analyze this perfume/fragrance image and provide details in JSON format with these fields: name, brand, category (from: Fresh, Floral, Oriental, Woody, Citrus, Gourmand, Aquatic, Spicy, Green, Fruity), gender (Men, Women, Unisex), description, and notes (top, middle, base notes as arrays). Only return the JSON object.";
+        
+        const result = await model.generateContent([prompt, imagePart]);
+        const response = await result.response;
+        const text = response.text();
+        
+        try {
+          const recognizedData = JSON.parse(text);
+          fragranceData = { ...recognizedData, ...fragranceData };
+          
+          // Add the uploaded image URL
+          if (req.file.s3Url) {
+            fragranceData.images = [{
+              url: req.file.s3Url,
+              key: req.file.key || req.file.s3Url.split('/').pop()
+            }];
+          }
+        } catch (e) {
+          console.error('Error parsing Gemini response:', e);
+        }
+      }
+      
+      const fragrance = new Fragrance(fragranceData);
+      const savedFragrance = await fragrance.save();
+      
+      res.status(201).json(savedFragrance);
+    } catch (error) {
+      console.error('Error in createFragrance:', error);
+      res.status(400).json({ message: error.message });
+    }
   }
-
-};
+];
 
 
 
